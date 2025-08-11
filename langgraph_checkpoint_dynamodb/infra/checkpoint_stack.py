@@ -72,9 +72,9 @@ class DynamoDBCheckpointStack(Stack):
         table = dynamodb.Table(self, "CheckpointTable", **table_config)
         
         # Enable TTL if configured
-        if self.props.ttl_days is not None:
+        if self.props.ttl_minutes is not None:
             if not self.props.ttl_attribute:
-                raise ValueError("ttl_attribute is required when ttl_days is set")
+                raise ValueError("ttl_attribute is required when ttl_minutes is set")
             table.add_time_to_live_attribute(self.props.ttl_attribute)
             
         return table

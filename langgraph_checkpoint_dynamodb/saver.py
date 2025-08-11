@@ -149,7 +149,7 @@ class DynamoDBSaver(BaseCheckpointSaver):
                 }
 
                 # Add filter for TTL if attribute is used
-                if self.config.table_config.ttl_days is not None:
+                if self.config.table_config.ttl_minutes is not None:
                     filter_expr, expr_values = create_ttl_filter(
                         self.config.table_config.ttl_attribute
                     )
@@ -173,7 +173,7 @@ class DynamoDBSaver(BaseCheckpointSaver):
             }
 
             # Add filter for TTL if attribute is used
-            if self.config.table_config.ttl_days is not None:
+            if self.config.table_config.ttl_minutes is not None:
                 filter_expr, expr_values = create_ttl_filter(
                     self.config.table_config.ttl_attribute
                 )
@@ -281,7 +281,7 @@ class DynamoDBSaver(BaseCheckpointSaver):
                 }
 
                 # Add filter for TTL if attribute is used
-                if self.config.table_config.ttl_days is not None:
+                if self.config.table_config.ttl_minutes is not None:
                     filter_expr, expr_values = create_ttl_filter(
                         self.config.table_config.ttl_attribute
                     )
@@ -309,7 +309,7 @@ class DynamoDBSaver(BaseCheckpointSaver):
             }
 
             # Add filter for TTL if attribute is used
-            if self.config.table_config.ttl_days is not None:
+            if self.config.table_config.ttl_minutes is not None:
                 filter_expr, expr_values = create_ttl_filter(
                     self.config.table_config.ttl_attribute
                 )
@@ -414,7 +414,7 @@ class DynamoDBSaver(BaseCheckpointSaver):
                 query_params["Limit"] = limit
 
             # Add filter for TTL if attribute is used
-            if self.config.table_config.ttl_days is not None:
+            if self.config.table_config.ttl_minutes is not None:
                 filter_expr, expr_values = create_ttl_filter(
                     self.config.table_config.ttl_attribute
                 )
@@ -452,7 +452,7 @@ class DynamoDBSaver(BaseCheckpointSaver):
                     }
 
                     # Add filter for TTL if attribute is used
-                    if self.config.table_config.ttl_days is not None:
+                    if self.config.table_config.ttl_minutes is not None:
                         filter_expr, expr_values = create_ttl_filter(
                             self.config.table_config.ttl_attribute
                         )
@@ -571,7 +571,7 @@ class DynamoDBSaver(BaseCheckpointSaver):
                 query_params["Limit"] = limit
 
             # Add filter for TTL if attribute is used
-            if self.config.table_config.ttl_days is not None:
+            if self.config.table_config.ttl_minutes is not None:
                 filter_expr, expr_values = create_ttl_filter(
                     self.config.table_config.ttl_attribute
                 )
@@ -612,7 +612,7 @@ class DynamoDBSaver(BaseCheckpointSaver):
                     }
 
                     # Add filter for TTL if attribute is used
-                    if self.config.table_config.ttl_days is not None:
+                    if self.config.table_config.ttl_minutes is not None:
                         filter_expr, expr_values = create_ttl_filter(
                             self.config.table_config.ttl_attribute
                         )
@@ -719,7 +719,7 @@ class DynamoDBSaver(BaseCheckpointSaver):
             checkpoint_data,
             metadata_data,
             config["configurable"].get("checkpoint_id"),
-            self.config.table_config.ttl_days,
+            self.config.table_config.ttl_minutes,
             self.config.table_config.ttl_attribute,
         )
 
@@ -766,7 +766,7 @@ class DynamoDBSaver(BaseCheckpointSaver):
             checkpoint_data,
             metadata_data,
             config["configurable"].get("checkpoint_id"),
-            self.config.table_config.ttl_days,
+            self.config.table_config.ttl_minutes,
             self.config.table_config.ttl_attribute,
         )
 
@@ -818,7 +818,7 @@ class DynamoDBSaver(BaseCheckpointSaver):
                         channel,
                         type_,
                         value_data,
-                        self.config.table_config.ttl_days,
+                        self.config.table_config.ttl_minutes,
                         self.config.table_config.ttl_attribute,
                     )
 
@@ -869,7 +869,7 @@ class DynamoDBSaver(BaseCheckpointSaver):
                         channel,
                         type_,
                         value_data,
-                        self.config.table_config.ttl_days,
+                        self.config.table_config.ttl_minutes,
                         self.config.table_config.ttl_attribute,
                     )
 
@@ -969,7 +969,7 @@ class DynamoDBSaver(BaseCheckpointSaver):
                     updates_needed.append(self._enable_pitr)
 
             # Check TTL configuration
-            if table_config.ttl_days is not None:
+            if table_config.ttl_minutes is not None:
                 ttl_status = self.client.describe_time_to_live(
                     TableName=table_config.table_name
                 )["TimeToLiveDescription"]["TimeToLiveStatus"]
@@ -1015,7 +1015,7 @@ class DynamoDBSaver(BaseCheckpointSaver):
                 self._enable_pitr()
 
             # Enable TTL if configured
-            if table_config.ttl_days is not None:
+            if table_config.ttl_minutes is not None:
                 self._enable_ttl()
 
             logger.info(f"Table {table_config.table_name} created")
@@ -1057,7 +1057,7 @@ class DynamoDBSaver(BaseCheckpointSaver):
     def _enable_ttl(self) -> None:
         """Enable TTL for the table and update existing items."""
         logger.info(
-            f"Enabling TTL for table {self.config.table_config.table_name} with duration {self.config.table_config.ttl_days} days"
+            f"Enabling TTL for table {self.config.table_config.table_name} with duration {self.config.table_config.ttl_minutes} minutes"
         )
 
         # First enable TTL on the table
@@ -1070,10 +1070,10 @@ class DynamoDBSaver(BaseCheckpointSaver):
         )
 
         # Then update existing items with TTL, but only those without the TTL attribute
-        if self.config.table_config.ttl_days is not None:
+        if self.config.table_config.ttl_minutes is not None:
             logger.info("Updating existing items that don't have TTL attribute...")
             expiration_time = int(time.time()) + (
-                self.config.table_config.ttl_days * 24 * 60 * 60
+                    self.config.table_config.ttl_minutes * 60
             )
             ttl_attr = self.config.table_config.ttl_attribute
             batch_size = 25  # DynamoDB batch write limit

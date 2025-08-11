@@ -126,7 +126,7 @@ def create_checkpoint_item(
     checkpoint_data: str,
     metadata_data: str,
     parent_checkpoint_id: Optional[str] = None,
-    ttl_days: Optional[int] = None,
+    ttl_minutes: Optional[int] = None,
     ttl_attribute: str = "expireAt",
 ) -> CheckpointItem:
     """Create and validate checkpoint item."""
@@ -148,9 +148,9 @@ def create_checkpoint_item(
     if parent_checkpoint_id:
         item["parent_checkpoint_id"] = parent_checkpoint_id
 
-    # Add TTL attribute if ttl_days is set
-    if ttl_days is not None:
-        expiration_time = int(time.time()) + (ttl_days * 24 * 60 * 60)
+    # Add TTL attribute if ttl_minutes is set
+    if ttl_minutes is not None:
+        expiration_time = int(time.time()) + (ttl_minutes * 60)
         item[ttl_attribute] = expiration_time
 
     return validate_checkpoint_item(item)
@@ -165,7 +165,7 @@ def create_write_item(
     channel: str,
     type_: str,
     value_data: str,
-    ttl_days: Optional[int] = None,
+    ttl_minutes: Optional[int] = None,
     ttl_attribute: str = "expireAt",
 ) -> WriteItem:
     """Create and validate write item."""
@@ -184,9 +184,9 @@ def create_write_item(
         "idx": idx,
     }
 
-    # Add TTL attribute if ttl_days is set
-    if ttl_days is not None:
-        expiration_time = int(time.time()) + (ttl_days * 24 * 60 * 60)
+    # Add TTL attribute if ttl_minutes is set
+    if ttl_minutes is not None:
+        expiration_time = int(time.time()) + (ttl_minutes * 60)
         item[ttl_attribute] = expiration_time
 
     return validate_write_item(item)
