@@ -14,9 +14,10 @@ from langgraph_checkpoint_dynamodb import (
     DynamoDBTableConfig,
 )
 from langgraph_checkpoint_dynamodb.config import BillingMode
+from langgraph_checkpoint_dynamodb.errors import DynamoDBCheckpointError
 
 # Configure pytest-asyncio to use function scope for event loops
-pytest.mark.asyncio.loop_scope = "function"
+# Configuration is handled in pyproject.toml
 
 
 @pytest.fixture(scope="function")
@@ -401,3 +402,176 @@ class TestLangGraphUsage:
             )
         )
         assert len(updates) > 0
+
+
+class TestDynamoDBSaverErrorHandling:
+    """Tests for error handling and edge cases."""
+
+    @mock_aws
+    def test_initialization_without_deploy_fails(self, aws_credentials):
+        """
+        Test initialization without deploy fails for non-existent table.
+
+        Covers:
+        - __init__ error path when deploy=False and table doesn't exist (lines 89-105)
+        """
+        table_config = DynamoDBTableConfig(
+            table_name="nonexistent_table", billing_mode=BillingMode.PAY_PER_REQUEST
+        )
+        config = DynamoDBConfig(table_config=table_config)
+
+        # Should raise DynamoDBCheckpointError when table doesn't exist and deploy=False
+        with pytest.raises(DynamoDBCheckpointError) as exc_info:
+            DynamoDBSaver(config=config, deploy=False)
+
+        # Verify the error message mentions the table doesn't exist
+        assert "does not exist" in str(exc_info.value)
+
+    @mock_aws
+    def test_get_latest_checkpoint(self, aws_credentials, sample_config):
+        """
+        Test getting latest checkpoint without checkpoint_id.
+
+        Covers:
+        - get_tuple() without checkpoint_id (gets latest) (lines 140-166)
+        - Parent checkpoint handling
+        """
+        table_config = DynamoDBTableConfig(
+            table_name="test_checkpoints", billing_mode=BillingMode.PAY_PER_REQUEST
+        )
+        config = DynamoDBConfig(table_config=table_config)
+        saver = DynamoDBSaver(config=config, deploy=True)
+
+        # Create multiple checkpoints
+        checkpoint_configs = []
+        parent_id = None
+        for i in range(3):
+            checkpoint_config = RunnableConfig(
+                configurable={
+                    "thread_id": sample_config["configurable"]["thread_id"],
+                    "checkpoint_ns": "",
+                    "checkpoint_id": parent_id,  # Set parent checkpoint_id
+                }
+            )
+            checkpoint = {"id": f"checkpoint_{i}"}
+            metadata = {"step": i}
+            saver.put(checkpoint_config, checkpoint, metadata, {})
+            checkpoint_configs.append(checkpoint_config)
+            # Update parent_id for next checkpoint
+            parent_id = f"checkpoint_{i}"
+
+        # Get latest checkpoint without checkpoint_id
+        latest_config = RunnableConfig(
+            configurable={
+                "thread_id": sample_config["configurable"]["thread_id"],
+                "checkpoint_ns": "",
+                # No checkpoint_id specified - should get latest
+            }
+        )
+        result = saver.get_tuple(latest_config)
+
+        # Should return the most recent checkpoint (checkpoint_2)
+        assert result is not None
+        assert result.checkpoint["id"] == "checkpoint_2"
+
+    @mock_aws
+    def test_list_with_pagination(self, aws_credentials, sample_config):
+        """
+        Test list() with before and limit parameters.
+
+        Covers:
+        - list() with before parameter (lines 402-405)
+        - list() with limit parameter (lines 413-414)
+        """
+        table_config = DynamoDBTableConfig(
+            table_name="test_checkpoints", billing_mode=BillingMode.PAY_PER_REQUEST
+        )
+        config = DynamoDBConfig(table_config=table_config)
+        saver = DynamoDBSaver(config=config, deploy=True)
+
+        # Create multiple checkpoints
+        checkpoint_configs = []
+        for i in range(5):
+            checkpoint_config = RunnableConfig(
+                configurable={
+                    "thread_id": sample_config["configurable"]["thread_id"],
+                    "checkpoint_ns": "",
+                    "checkpoint_id": f"checkpoint_{i}",
+                }
+            )
+            checkpoint = {"id": f"checkpoint_{i}"}
+            metadata = {"step": i}
+            saver.put(checkpoint_config, checkpoint, metadata, {})
+            checkpoint_configs.append(checkpoint_config)
+
+        # Test with limit
+        results = list(saver.list(sample_config, limit=3))
+        assert len(results) == 3
+        # Should get the 3 most recent checkpoints
+        assert results[0].checkpoint["id"] == "checkpoint_4"
+        assert results[1].checkpoint["id"] == "checkpoint_3"
+        assert results[2].checkpoint["id"] == "checkpoint_2"
+
+        # Test with before parameter
+        before_config = RunnableConfig(
+            configurable={
+                "thread_id": sample_config["configurable"]["thread_id"],
+                "checkpoint_ns": "",
+                "checkpoint_id": "checkpoint_3",
+            }
+        )
+        results_before = list(saver.list(sample_config, before=before_config))
+        # Should get checkpoints before checkpoint_3 (checkpoint_2, checkpoint_1, checkpoint_0)
+        assert len(results_before) == 3
+        assert results_before[0].checkpoint["id"] == "checkpoint_2"
+        assert results_before[1].checkpoint["id"] == "checkpoint_1"
+        assert results_before[2].checkpoint["id"] == "checkpoint_0"
+
+    @mock_aws
+    def test_ttl_functionality(self, aws_credentials, sample_config):
+        """
+        Test checkpoint creation with TTL and TTL filtering in queries.
+
+        Covers:
+        - TTL paths in create_checkpoint_item (lines 152-154 in utils.py)
+        - TTL filtering in queries (lines 152-157, 176-181 in saver.py)
+        """
+        # Configure table with TTL
+        table_config = DynamoDBTableConfig(
+            table_name="test_checkpoints",
+            billing_mode=BillingMode.PAY_PER_REQUEST,
+            ttl_days=7,
+        )
+        config = DynamoDBConfig(table_config=table_config)
+        saver = DynamoDBSaver(config=config, deploy=True)
+
+        # Create checkpoint with TTL
+        checkpoint = {"id": sample_config["configurable"]["checkpoint_id"]}
+        metadata = {"step": 1}
+        saver.put(sample_config, checkpoint, metadata, {})
+
+        # Get checkpoint and verify TTL was set
+        result = saver.get_tuple(sample_config)
+        assert result is not None
+        assert result.checkpoint["id"] == sample_config["configurable"]["checkpoint_id"]
+
+        # Verify TTL filter is applied in queries
+        # Create another checkpoint
+        checkpoint_config2 = RunnableConfig(
+            configurable={
+                "thread_id": sample_config["configurable"]["thread_id"],
+                "checkpoint_ns": "",
+                "checkpoint_id": "checkpoint_with_ttl",
+            }
+        )
+        checkpoint2 = {"id": "checkpoint_with_ttl"}
+        metadata2 = {"step": 2}
+        saver.put(checkpoint_config2, checkpoint2, metadata2, {})
+
+        # List checkpoints - should filter out expired ones
+        results = list(saver.list(sample_config))
+        assert len(results) == 2
+        # Both checkpoints should be returned as they haven't expired yet
+        checkpoint_ids = {r.checkpoint["id"] for r in results}
+        assert "checkpoint_with_ttl" in checkpoint_ids
+        assert sample_config["configurable"]["checkpoint_id"] in checkpoint_ids

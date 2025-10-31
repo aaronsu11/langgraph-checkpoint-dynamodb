@@ -26,7 +26,41 @@ infra = [
     "aws-cdk-lib>=2.174.0",
     "constructs>=10.0.0,<11.0.0",
 ]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.0.0",
+    "moto[dynamodb]>=4.2.0",
+]
 
 [project.urls]
 "Homepage" = "https://github.com/aaronsu11/langgraph-checkpoint-dynamodb"
 "Bug Tracker" = "https://github.com/aaronsu11/langgraph-checkpoint-dynamodb/issues"
+
+[tool.pytest.ini_options]
+testpaths = ["langgraph_checkpoint_dynamodb/tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+markers = [
+    "asyncio: marks tests as async (deselect with '-m \"not asyncio\"')",
+]
+
+[tool.coverage.run]
+source = ["langgraph_checkpoint_dynamodb"]
+omit = [
+    "*/tests/*",
+    "*/__pycache__/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod",
+]
