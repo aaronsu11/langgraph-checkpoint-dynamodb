@@ -1,5 +1,6 @@
 from aws_cdk import (
     Stack,
+    Duration,
     aws_dynamodb as dynamodb,
     RemovalPolicy,
     CfnOutput,
@@ -54,8 +55,15 @@ class DynamoDBCheckpointStack(Stack):
                 name="SK", type=dynamodb.AttributeType.STRING
             ),
             "removal_policy": RemovalPolicy.RETAIN,
-            "point_in_time_recovery": self.props.enable_point_in_time_recovery,
         }
+
+        # Add point-in-time recovery if enabled
+        if self.props.enable_point_in_time_recovery:
+            table_config["point_in_time_recovery_specification"] = (
+                dynamodb.PointInTimeRecoverySpecification(
+                    point_in_time_recovery_enabled=True
+                )
+            )
 
         # Add encryption if enabled
         if self.props.enable_encryption:
@@ -76,11 +84,20 @@ class DynamoDBCheckpointStack(Stack):
         # Create table
         table = dynamodb.Table(self, "CheckpointTable", **table_config)
 
-        # Enable TTL if configured
+        # Enable TTL if configured via CloudFormation property
         if self.props.ttl_days is not None:
             if not self.props.ttl_attribute:
                 raise ValueError("ttl_attribute is required when ttl_days is set")
-            table.add_time_to_live_attribute(self.props.ttl_attribute)
+            # Configure TTL via the underlying CloudFormation resource
+            cfn_table = table.node.default_child
+            if cfn_table:
+                cfn_table.add_property_override(
+                    "TimeToLiveSpecification",
+                    {
+                        "Enabled": True,
+                        "AttributeName": self.props.ttl_attribute,
+                    },
+                )
 
         return table
 
@@ -104,8 +121,8 @@ class DynamoDBCheckpointStack(Stack):
 
         read_scaling.scale_on_utilization(
             target_utilization_percent=70,
-            scale_in_cooldown=300,  # 5 minutes
-            scale_out_cooldown=60,  # 1 minute
+            scale_in_cooldown=Duration.minutes(5),
+            scale_out_cooldown=Duration.minutes(1),
         )
 
         # Write auto-scaling
@@ -116,8 +133,8 @@ class DynamoDBCheckpointStack(Stack):
 
         write_scaling.scale_on_utilization(
             target_utilization_percent=70,
-            scale_in_cooldown=300,  # 5 minutes
-            scale_out_cooldown=60,  # 1 minute
+            scale_in_cooldown=Duration.minutes(5),
+            scale_out_cooldown=Duration.minutes(1),
         )
 
     def _add_outputs(self) -> None:
