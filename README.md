@@ -14,15 +14,15 @@ pip install langgraph-checkpoint-amazon-dynamodb
 
 Create the DynamoDB table and compile the checkpointer with default settings:
 ```python
-from langgraph.graph import END, START, MessageGraph
+from langgraph.graph import END, START, MessagesState, StateGraph
 from langgraph_checkpoint_dynamodb import DynamoDBSaver
 
 # Set deploy=True to create the table with default settings if it doesn't exist
 checkpointer = DynamoDBSaver(deploy=True)
 
 # Use with your LangGraph, below is a simple example
-workflow = MessageGraph()
-workflow.add_node("chatbot", lambda state: [{"role": "ai", "content": "Hello!"}])
+workflow = StateGraph(MessagesState)
+workflow.add_node("chatbot", lambda state: {"messages": [{"role": "ai", "content": "Hello!"}]})
 workflow.add_edge(START, "chatbot")
 workflow.add_edge("chatbot", END)
 graph = workflow.compile(checkpointer=checkpointer)
@@ -32,7 +32,7 @@ Use a thread ID to retain state between invocations:
 ```python
 config={"configurable": {"thread_id": "1"}}
 # Checkpoints will be saved with the configured thread_id as DynamoDB partition key
-print(graph.invoke([{"role": "human", "content": "Hi!"}], config))
+print(graph.invoke({"messages": [{"role": "human", "content": "Hi!"}]}, config))
 # Review last saved checkpoint
 print(graph.get_state(config))
 ```
@@ -253,6 +253,10 @@ The DynamoDB checkpointer enables all LangGraph persistence features:
 - **Time Travel**: Replay and debug specific graph steps
 - **Fault Tolerance**: Recover from failures and resume from last successful step
 - **Sync and Async**: Support sync and async methods using efficient DynamoDB KeyConditionExpressions for cost-effective queries
+
+## Running Tests
+
+All tests use local/mock AWS services and **never create cloud resources**. For detailed testing instructions, see [tests/README.md](langgraph_checkpoint_dynamodb/tests/README.md).
 
 ## License
 

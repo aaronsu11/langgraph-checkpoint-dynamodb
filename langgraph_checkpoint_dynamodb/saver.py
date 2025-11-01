@@ -396,17 +396,28 @@ class DynamoDBSaver(BaseCheckpointSaver):
 
         try:
             # Build query for checkpoints only
-            condition = Key("PK").eq(thread_id)
             checkpoint_prefix = f"{checkpoint_ns}#checkpoint#"
+            condition = Key("PK").eq(thread_id)
 
-            if before and (before_id := get_checkpoint_id(before)):
-                condition = condition & Key("SK").lt(
-                    f"{checkpoint_ns}#checkpoint#{before_id}"
-                )
+            # Extract before_id once to avoid calling get_checkpoint_id twice
+            before_id = get_checkpoint_id(before) if before else None
+
+            # When 'before' is specified, we use SK < before_sk
+            # This works because:
+            # 1. Checkpoints have prefix {checkpoint_ns}#checkpoint#
+            # 2. Writes have prefix {checkpoint_ns}#write#
+            # 3. Lexicographically: checkpoint < write
+            # 4. So SK < {checkpoint_ns}#checkpoint#{before_id} will only match checkpoints
+            # 5. And all checkpoints with that prefix are guaranteed to be < the comparison value
+            if before_id:
+                before_sk = f"{checkpoint_ns}#checkpoint#{before_id}"
+                condition = condition & Key("SK").lt(before_sk)
+            else:
+                # When 'before' is not specified, use begins_with to filter checkpoints
+                condition = condition & Key("SK").begins_with(checkpoint_prefix)
 
             query_params = {
-                "KeyConditionExpression": condition
-                & Key("SK").begins_with(checkpoint_prefix),
+                "KeyConditionExpression": condition,
                 "ScanIndexForward": False,
             }
 
@@ -415,14 +426,21 @@ class DynamoDBSaver(BaseCheckpointSaver):
 
             # Add filter for TTL if attribute is used
             if self.config.table_config.ttl_days is not None:
-                filter_expr, expr_values = create_ttl_filter(
+                ttl_filter_expr, ttl_expr_values = create_ttl_filter(
                     self.config.table_config.ttl_attribute
                 )
-                query_params["FilterExpression"] = filter_expr
-                query_params["ExpressionAttributeValues"] = expr_values
+                query_params["FilterExpression"] = ttl_filter_expr
+                query_params["ExpressionAttributeValues"] = ttl_expr_values
 
             response = self.table.query(**query_params)
             items = response.get("Items", [])
+
+            # When using SK < before_sk, we need to filter to ensure begins_with behavior
+            # since SK < can match items that don't start with the checkpoint prefix
+            if before_id:
+                items = [
+                    item for item in items if item["SK"].startswith(checkpoint_prefix)
+                ]
 
             # Process each checkpoint
             for item in items:
@@ -552,18 +570,29 @@ class DynamoDBSaver(BaseCheckpointSaver):
         checkpoint_ns = config["configurable"].get("checkpoint_ns", "")
 
         try:
-            # Build query for checkpoints
-            condition = Key("PK").eq(thread_id)
+            # Build query for checkpoints only
             checkpoint_prefix = f"{checkpoint_ns}#checkpoint#"
+            condition = Key("PK").eq(thread_id)
 
-            if before and (before_id := get_checkpoint_id(before)):
-                condition = condition & Key("SK").lt(
-                    f"{checkpoint_ns}#checkpoint#{before_id}"
-                )
+            # Extract before_id once to avoid calling get_checkpoint_id twice
+            before_id = get_checkpoint_id(before) if before else None
+
+            # When 'before' is specified, we use SK < before_sk
+            # This works because:
+            # 1. Checkpoints have prefix {checkpoint_ns}#checkpoint#
+            # 2. Writes have prefix {checkpoint_ns}#write#
+            # 3. Lexicographically: checkpoint < write
+            # 4. So SK < {checkpoint_ns}#checkpoint#{before_id} will only match checkpoints
+            # 5. And all checkpoints with that prefix are guaranteed to be < the comparison value
+            if before_id:
+                before_sk = f"{checkpoint_ns}#checkpoint#{before_id}"
+                condition = condition & Key("SK").lt(before_sk)
+            else:
+                # When 'before' is not specified, use begins_with to filter checkpoints
+                condition = condition & Key("SK").begins_with(checkpoint_prefix)
 
             query_params = {
-                "KeyConditionExpression": condition
-                & Key("SK").begins_with(checkpoint_prefix),
+                "KeyConditionExpression": condition,
                 "ScanIndexForward": False,
             }
 
@@ -572,11 +601,11 @@ class DynamoDBSaver(BaseCheckpointSaver):
 
             # Add filter for TTL if attribute is used
             if self.config.table_config.ttl_days is not None:
-                filter_expr, expr_values = create_ttl_filter(
+                ttl_filter_expr, ttl_expr_values = create_ttl_filter(
                     self.config.table_config.ttl_attribute
                 )
-                query_params["FilterExpression"] = filter_expr
-                query_params["ExpressionAttributeValues"] = expr_values
+                query_params["FilterExpression"] = ttl_filter_expr
+                query_params["ExpressionAttributeValues"] = ttl_expr_values
 
             response = await execute_with_retry(
                 lambda: self._async_table.query(**query_params),
@@ -585,6 +614,13 @@ class DynamoDBSaver(BaseCheckpointSaver):
             )
 
             items = response.get("Items", [])
+
+            # When using SK < before_sk, we need to filter to ensure begins_with behavior
+            # since SK < can match items that don't start with the checkpoint prefix
+            if before_id:
+                items = [
+                    item for item in items if item["SK"].startswith(checkpoint_prefix)
+                ]
 
             for item in items:
                 try:
@@ -793,6 +829,7 @@ class DynamoDBSaver(BaseCheckpointSaver):
         config: RunnableConfig,
         writes: Sequence[Tuple[str, Any]],
         task_id: str,
+        task_path: str = "",
     ) -> None:
         """
         Store writes for a checkpoint.
@@ -832,6 +869,7 @@ class DynamoDBSaver(BaseCheckpointSaver):
         config: RunnableConfig,
         writes: Sequence[Tuple[str, Any]],
         task_id: str,
+        task_path: str = "",
     ) -> None:
         """Store writes asynchronously with efficient batch processing."""
         await self._ensure_async_clients()
