@@ -27,10 +27,13 @@ infra = [
     "constructs>=10.0.0,<11.0.0",
 ]
 dev = [
+    "aws-cdk-lib>=2.174.0",
+    "constructs>=10.0.0,<11.0.0",
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0",
     "pytest-cov>=4.0.0",
     "moto[dynamodb]>=4.2.0",
+    "testcontainers[localstack]>=4.0.0",
 ]
 
 [project.urls]
@@ -44,6 +47,7 @@ python_classes = ["Test*"]
 python_functions = ["test_*"]
 markers = [
     "asyncio: marks tests as async (deselect with '-m \"not asyncio\"')",
+    "integration: marks tests as integration tests (deselect with '-m \"not integration\"')",
 ]
 
 [tool.coverage.run]
